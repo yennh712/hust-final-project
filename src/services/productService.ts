@@ -1,7 +1,26 @@
 import { supabase } from '@/lib/supabase'
 
 export const getProductsService = async () => {
-  return await supabase.from('products').select('*')
+  const { data: products, error } = await supabase.from('products').select('*')
+  
+  if (!products) return { data: null, error }
+  
+  // Fetch variants for each product to calculate min price
+  const productsWithVariants = await Promise.all(
+    products.map(async (product) => {
+      const { data: variants } = await supabase
+        .from('variants')
+        .select('attributes')
+        .eq('product_id', product.id)
+      
+      return {
+        ...product,
+        variants: variants || []
+      }
+    })
+  )
+  
+  return { data: productsWithVariants, error }
 }
 
 export const getProductDetailService = async (productId: string) => {
@@ -22,11 +41,19 @@ export const getProductDetailService = async (productId: string) => {
     .select('*')
     .eq('product_id', productId)
 
+  const mockupIds = mockups?.map(m => m.id) || []
+
+  const { data: printAreas } = await supabase
+    .from('print_areas')
+    .select('*')
+    .in('mockup_id', mockupIds)
+
   return {
     data: {
       product,
       variants,
-      mockups
+      mockups,
+      printAreas
     },
     errors: {
       productError,

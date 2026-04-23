@@ -5,11 +5,7 @@
 <template>
   <div class="frame">
     <div class="card">
-      
-      <!-- Navbar -->
-        <Navbar />
-
-      <!-- Content -->
+      <Navbar />
       <h1 class="title">Welcome to my project!</h1>
 
     </div>

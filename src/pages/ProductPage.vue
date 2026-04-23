@@ -9,6 +9,26 @@ const router = useRouter()
 const products = ref<any[]>([])
 const search = ref('')
 
+// Format price
+const formatPrice = (price: number | null) => {
+  if (!price) return 'N/A'
+  return new Intl.NumberFormat('vi-VN', {
+    style: 'currency',
+    currency: 'VND'
+  }).format(price)
+}
+
+// Get min variant price
+const getMinVariantPrice = (variants: any[]) => {
+  if (!variants || variants.length === 0) return null
+  
+  const prices = variants
+    .map((v) => v.attributes?.price)
+    .filter((p) => p !== undefined && p !== null)
+  
+  return prices.length > 0 ? Math.min(...prices) : null
+}
+
 // navigation
 const goToCreate = () => {
   router.push('/products/create')
@@ -62,7 +82,7 @@ const filteredProducts = () => {
         <tbody>
           <tr v-for="p in filteredProducts()" :key="p.id">
             <td>{{ p.name }}</td>
-            <td>{{ p.price || 'N/A' }}</td>
+            <td>{{ formatPrice(getMinVariantPrice(p.variants)) }}</td>
             <td>
               <button @click="goToEdit(p.id)">Edit</button>
               <button class="delete">Delete</button>
@@ -145,11 +165,13 @@ table {
 
 th {
   background: #f0f3f5;
+  text-align: center;
 }
 
 th, td {
   padding: 10px;
   border-bottom: 1px solid #ddd;
+  text-align: center;
 }
 
 button {
