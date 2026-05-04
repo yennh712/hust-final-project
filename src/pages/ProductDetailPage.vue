@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, type CSSProperties } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import Navbar from '@/components/Navbar.vue'
 import { getProductDetailController } from '@/controllers/productController'
 import { createVariantController, updateVariantController, deleteVariantController } from '@/controllers/variantController'
@@ -18,6 +18,7 @@ const formatPrice = (price: number) => {
 }
 
 const route = useRoute()
+const router = useRouter()
 const isCreateMode = route.path.includes('create')
 const productId = route.params.id as string
 
@@ -482,6 +483,32 @@ const saveProduct = async () => {
   }
 }
 
+const handleDeleteProduct = async () => {
+  if (!product.value) {
+    errorToast('No product to delete')
+    return
+  }
+
+  const confirm = window.confirm('Are you sure you want to delete this product? This action cannot be undone.')
+  if (!confirm) return
+
+  try {
+    const { error } = await supabase
+      .from('products')
+      .delete()
+      .eq('id', product.value.id)
+
+    if (error) throw error
+
+    success('Product deleted successfully!')
+    setTimeout(() => {
+      router.push('/products')
+    }, 1000)
+  } catch (error: any) {
+    errorToast('Delete failed: ' + error.message)
+  }
+}
+
 onMounted(fetchData)
 
 const isEditMode = ref(false)
@@ -569,8 +596,8 @@ const resetForm = () => {
 }
 
 const handleDeleteVariant = async (id: string) => {
-  const confirmDelete = confirm('Delete this variant?')
-  if (!window.confirm('Are you sure?')) return
+  if (!window.confirm('Delete this variant?')) return
+  
   const { error } = await deleteVariantController(id)
 
   if (error) {
@@ -581,7 +608,7 @@ const handleDeleteVariant = async (id: string) => {
   }
 
   if (editingVariantId.value === id) {
-  resetForm()
+    resetForm()
   }
 }
 
@@ -596,9 +623,14 @@ const handleDeleteVariant = async (id: string) => {
       <div class="section">
         <div class="section-header">
           <h2>{{ isCreateMode ? 'Create Product' : 'Product Details' }}</h2>
-          <button class="save-product" @click="saveProduct">
-            {{ isCreateMode ? 'Create' : 'Save' }} Product
-          </button>
+          <div class="button-group">
+            <button class="save-product" @click="saveProduct">
+              {{ isCreateMode ? 'Create' : 'Save' }} Product
+            </button>
+            <button v-if="!isCreateMode" class="delete-product" @click="handleDeleteProduct">
+              Delete Product
+            </button>
+          </div>
         </div>
       </div>
 
@@ -988,5 +1020,25 @@ button {
 
 .save-product:hover {
   background: #229954;
+}
+
+.button-group {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.delete-product {
+  background: #e74c3c;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.delete-product:hover {
+  background: #c0392b;
 }
 </style>

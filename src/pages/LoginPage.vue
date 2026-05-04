@@ -2,6 +2,9 @@
 import { ref } from 'vue'
 import { loginController } from '@/controllers/authController'
 import { router } from '@/routers'
+import { useToast } from '@/composables/useToast'
+
+const { error: errorToast, success } = useToast()
 
 const email = ref<string>('')
 const password = ref<string>('')
@@ -10,9 +13,12 @@ const handleLogin = async (): Promise<void> => {
   const { error } = await loginController(email.value, password.value)
 
   if (error) {
-    alert(error.message)
+    errorToast(error.message)
   } else {
-    router.push('/dashboard')
+    success('Login successful!')
+    setTimeout(() => {
+      router.push('/dashboard')
+    }, 500)
   }
 }
 </script>

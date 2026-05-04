@@ -2,9 +2,12 @@
 import { ref, onMounted } from 'vue'
 import { getProductsController } from '@/controllers/productController'
 import { useRouter } from 'vue-router'
+import { supabase } from '@/lib/supabase'
+import { useToast } from '@/composables/useToast'
 import Navbar from '@/components/Navbar.vue'
 
 const router = useRouter()
+const { success, error: errorToast } = useToast()
 
 const products = ref<any[]>([])
 const search = ref('')
@@ -36,6 +39,27 @@ const goToCreate = () => {
 
 const goToEdit = (id: string) => {
   router.push(`/products/${id}`)
+}
+
+const handleDeleteProduct = async (id: string, name: string) => {
+  const confirm = window.confirm(
+    `Are you sure you want to delete "${name}"? This action cannot be undone.`
+  )
+  if (!confirm) return
+
+  try {
+    const { error } = await supabase
+      .from('products')
+      .delete()
+      .eq('id', id)
+
+    if (error) throw error
+
+    success('Product deleted!')
+    fetchProducts()
+  } catch (error: any) {
+    errorToast('Delete failed: ' + error.message)
+  }
 }
 
 // fetch data
@@ -85,7 +109,7 @@ const filteredProducts = () => {
             <td>{{ formatPrice(getMinVariantPrice(p.variants)) }}</td>
             <td>
               <button @click="goToEdit(p.id)">Edit</button>
-              <button class="delete">Delete</button>
+              <button class="delete" @click="handleDeleteProduct(p.id, p.name)">Delete</button>
             </td>
           </tr>
         </tbody>
