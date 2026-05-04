@@ -75,12 +75,29 @@ const goBack = () => {
       <div class="section">
         <h3>Design</h3>
 
-        <div class="design-box">
-          <img
-            v-if="items[0]?.design?.image_url"
-            :src="items[0].design.image_url"
-          />
-          <span v-else>Design Preview</span>
+        <div class="design-container">
+          <div class="design-mockup">
+            <h4>Mockup</h4>
+            <img
+              v-if="items[0]?.design?.design_mockup_url"
+              :src="items[0].design.design_mockup_url"
+              alt="Design Mockup"
+            />
+            <span v-else>No mockup available</span>
+          </div>
+          
+          <div class="design-file">
+            <h4>Design File</h4>
+            <a
+              v-if="items[0]?.design?.design_file_url"
+              :href="items[0].design.design_file_url"
+              target="_blank"
+              class="download-link"
+            >
+              Download Design File
+            </a>
+            <span v-else>No design file available</span>
+          </div>
         </div>
       </div>
 
@@ -142,9 +159,43 @@ const goBack = () => {
 }
 
 /* design */
-.design-box {
-  margin-top: 10px;
+.design-container {
+  display: flex;
+  gap: 20px;
+  margin-top: 15px;
+}
+
+.design-mockup,
+.design-file {
+  flex: 1;
+}
+
+.design-mockup h4,
+.design-file h4 {
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+.design-mockup img {
+  max-width: 100%;
+  max-height: 300px;
   background: #eee;
-  padding: 20px;
+  padding: 10px;
+  border-radius: 4px;
+}
+
+.download-link {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 10px 16px;
+  background: #4a90e2;
+  color: white;
+  text-decoration: none;
+  border-radius: 4px;
+  transition: background 0.3s;
+}
+
+.download-link:hover {
+  background: #357abd;
 }
 </style>

@@ -6,6 +6,9 @@ import { getProductDetailController } from '@/controllers/productController'
 import { createVariantController, updateVariantController, deleteVariantController } from '@/controllers/variantController'
 import { supabase } from '@/lib/supabase'
 import { createPrintAreaController } from '@/controllers/printAreaController'
+import { useToast } from '@/composables/useToast'
+
+const { success, error: errorToast, info } = useToast()
 
 const formatPrice = (price: number) => {
   return new Intl.NumberFormat('vi-VN', {
@@ -19,8 +22,10 @@ const isCreateMode = route.path.includes('create')
 const productId = route.params.id as string
 
 const product = ref<any>(null)
+const productName = ref<string>('')
 const variants = ref<any[]>([])
 const mockups = ref<any[]>([])
+const uploadingMockup = ref(false)
 const printArea = ref({
   name: '',
   top: 0,
@@ -33,7 +38,7 @@ const printAreas = ref<any[]>([])
 
 const handleAddPrintArea = async () => {
   if (!selectedMockup.value) {
-    alert('Please select mockup first')
+    errorToast('Please select mockup first')
     return
   }
 
@@ -51,9 +56,9 @@ const handleAddPrintArea = async () => {
   const { error } = await createPrintAreaController(payload)
 
   if (error) {
-    alert(error.message)
+    errorToast(error.message)
   } else {
-    alert('Created!')
+    success('Print area created!')
     fetchData()
     resetPrintAreaForm()
   }
@@ -145,6 +150,20 @@ const activePrintArea = ref<any>(null)
 
 const startX = ref(0)
 const startY = ref(0)
+const mockupContainerRef = ref<HTMLElement | null>(null)
+
+const getMockupBounds = () => {
+  if (!mockupContainerRef.value) return null
+  const rect = mockupContainerRef.value.getBoundingClientRect()
+  return {
+    left: rect.left,
+    top: rect.top,
+    right: rect.right,
+    bottom: rect.bottom,
+    width: rect.width,
+    height: rect.height
+  }
+}
 
 const startDrag = (e: MouseEvent, pa: any) => {
   dragging.value = true
@@ -164,20 +183,40 @@ const onDrag = (e: MouseEvent) => {
   const dy = e.clientY - startY.value
 
   const attr = getAttr(activePrintArea.value)
+  const bounds = getMockupBounds()
 
-  attr.left += dx
-  attr.top += dy
+  if (bounds) {
+    const printAreaLeft = attr.left + (mockupContainerRef.value?.offsetLeft || 0)
+    const printAreaTop = attr.top + (mockupContainerRef.value?.offsetTop || 0)
+    const printAreaRight = printAreaLeft + attr.width
+    const printAreaBottom = printAreaTop + attr.height
+
+    let newLeft = attr.left + dx
+    let newTop = attr.top + dy
+
+    const containerLeft = mockupContainerRef.value?.offsetLeft || 0
+    const containerTop = mockupContainerRef.value?.offsetTop || 0
+    const containerRight = containerLeft + bounds.width
+    const containerBottom = containerTop + bounds.height
+
+    if (newLeft < 0) newLeft = 0
+    if (newTop < 0) newTop = 0
+    if (newLeft + attr.width > bounds.width) newLeft = bounds.width - attr.width
+    if (newTop + attr.height > bounds.height) newTop = bounds.height - attr.height
+
+    attr.left = newLeft
+    attr.top = newTop
+  } else {
+    attr.left += dx
+    attr.top += dy
+  }
 
   startX.value = e.clientX
   startY.value = e.clientY
 
   requestAnimationFrame(() => {
     const attr = getAttr(activePrintArea.value)
-
-    attr.left += dx
-    attr.top += dy
-
-    activePrintArea.value.attributes = { ...attr } // 👈 trigger re-render
+    activePrintArea.value.attributes = { ...attr }
   })
 }
 
@@ -211,9 +250,26 @@ const onResize = (e: MouseEvent) => {
   const dy = e.clientY - startY.value
 
   const attr = getAttr(activePrintArea.value)
+  const bounds = getMockupBounds()
 
-  attr.width += dx
-  attr.height += dy
+  let newWidth = attr.width + dx
+  let newHeight = attr.height + dy
+
+  if (bounds) {
+    const maxWidth = bounds.width - attr.left
+    const maxHeight = bounds.height - attr.top
+
+    if (newWidth > maxWidth) newWidth = maxWidth
+    if (newHeight > maxHeight) newHeight = maxHeight
+    if (newWidth < 20) newWidth = 20
+    if (newHeight < 20) newHeight = 20
+
+    attr.width = newWidth
+    attr.height = newHeight
+  } else {
+    attr.width += dx
+    attr.height += dy
+  }
 
   startX.value = e.clientX
   startY.value = e.clientY
@@ -242,9 +298,9 @@ const savePrintArea = async (pa: any) => {
     .eq('id', pa.id)
 
   if (error) {
-    alert('Save failed')
+    errorToast('Save failed')
   } else {
-    alert('Saved!')
+    success('Print area saved!')
   }
 }
 
@@ -288,26 +344,141 @@ const fetchData = async () => {
   }
 }
 
-const saveProduct = async () => {
-  if (!product.value) {
-    alert('No product to save')
+const handleMockupUpload = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  if (!input.files || input.files.length === 0) return
+
+  uploadingMockup.value = true
+  const file = input.files[0]
+
+  if (file.size > 5 * 1024 * 1024) {
+    errorToast('File too large. Max size: 5MB')
+    uploadingMockup.value = false
+    input.value = ''
     return
   }
 
-  const { error } = await supabase
-    .from('products')
-    .update({
-      metadata: {
-        ...(product.value.metadata || {}),
-        selected_print_areas: selectedPrintAreaIds.value
-      }
-    })
-    .eq('id', productId)
+  const fileName = `mockup-${Date.now()}-${file.name}`
 
-  if (error) {
-    alert('Save failed: ' + error.message)
+  try {
+    const { data: authData } = await supabase.auth.getSession()
+    if (!authData.session?.user) {
+      errorToast('Please login first')
+      throw new Error('Not authenticated')
+    }
+
+    const { data, error: uploadError } = await supabase.storage
+      .from('mockups')
+      .upload(fileName, file)
+
+    if (uploadError) {
+      errorToast(`Upload error: ${uploadError.message}`)
+      throw uploadError
+    }
+
+    const { data: urlData } = supabase.storage
+      .from('mockups')
+      .getPublicUrl(fileName)
+
+    const imageUrl = urlData.publicUrl
+
+    const { data: newMockup, error: insertError } = await supabase
+      .from('mockups')
+      .insert({
+        product_id: product.value?.id || null,
+        image_url: imageUrl
+      })
+      .select()
+
+    if (insertError) throw insertError
+
+    mockups.value.push(newMockup[0])
+    if (!selectedMockup.value && mockups.value.length > 0) {
+      selectedMockup.value = mockups.value[0]
+    }
+
+    success('Mockup uploaded successfully!')
+  } catch (error: any) {
+    errorToast('Upload failed: ' + error.message)
+  } finally {
+    uploadingMockup.value = false
+    input.value = ''
+  }
+}
+
+const saveProduct = async () => {
+  if (isCreateMode) {
+    if (!productName.value.trim()) {
+      errorToast('Please enter product name')
+      return
+    }
+
+    try {
+      const { data: authData } = await supabase.auth.getSession()
+      const userId = authData.session?.user?.id
+
+      if (!userId) {
+        errorToast('Please login first')
+        throw new Error('Not authenticated')
+      }
+
+      const { data, error } = await supabase
+        .from('products')
+        .insert({
+          name: productName.value.trim(),
+          seller_id: userId,
+          metadata: {
+            selected_print_areas: selectedPrintAreaIds.value
+          }
+        })
+        .select()
+
+      if (error) throw error
+
+      const newProduct = data[0]
+      product.value = newProduct
+
+      if (mockups.value.length > 0) {
+        const mockupsToUpdate = mockups.value
+          .filter(m => !m.product_id)
+          .map(m => m.id)
+
+        if (mockupsToUpdate.length > 0) {
+          const { error: updateError } = await supabase
+            .from('mockups')
+            .update({ product_id: newProduct.id })
+            .in('id', mockupsToUpdate)
+
+          if (updateError) throw updateError
+        }
+      }
+
+      success('Product created successfully!')
+      productName.value = ''
+    } catch (error: any) {
+      errorToast('Create failed: ' + error.message)
+    }
   } else {
-    alert('Product saved successfully!')
+    if (!product.value) {
+      errorToast('No product to save')
+      return
+    }
+
+    const { error } = await supabase
+      .from('products')
+      .update({
+        metadata: {
+          ...(product.value.metadata || {}),
+          selected_print_areas: selectedPrintAreaIds.value
+        }
+      })
+      .eq('id', productId)
+
+    if (error) {
+      errorToast('Save failed: ' + error.message)
+    } else {
+      success('Product saved successfully!')
+    }
   }
 }
 
@@ -339,9 +510,9 @@ const handleAddVariant = async () => {
   const { error } = await createVariantController(payload)
 
   if (error) {
-    alert(error.message)
+    errorToast(error.message)
   } else {
-    alert('Added!')
+    success('Variant added!')
     fetchData()
     resetForm()
   }
@@ -377,9 +548,9 @@ const handleUpdateVariant = async () => {
   )
 
   if (error) {
-    alert(error.message)
+    errorToast(error.message)
   } else {
-    alert('Updated!')
+    success('Variant updated!')
     fetchData()
     resetForm()
   }
@@ -403,9 +574,9 @@ const handleDeleteVariant = async (id: string) => {
   const { error } = await deleteVariantController(id)
 
   if (error) {
-    alert(error.message)
+    errorToast(error.message)
   } else {
-    alert('Deleted!')
+    success('Variant deleted!')
     fetchData()
   }
 
@@ -424,18 +595,40 @@ const handleDeleteVariant = async (id: string) => {
 
       <div class="section">
         <div class="section-header">
-          <h2>Product Details</h2>
+          <h2>{{ isCreateMode ? 'Create Product' : 'Product Details' }}</h2>
           <button class="save-product" @click="saveProduct">
-            Save Product
+            {{ isCreateMode ? 'Create' : 'Save' }} Product
           </button>
         </div>
       </div>
 
-      <div class="section">
+      <div class="section" v-if="isCreateMode">
+        <h3>Product Information</h3>
+        <input
+          v-model="productName"
+          type="text"
+          placeholder="Product Name"
+          class="input-field"
+        />
+      </div>
+
+      <div class="section" v-if="isCreateMode || mockups.length === 0">
+        <h3>Upload Mockup</h3>
+        <input
+          type="file"
+          accept="image/*"
+          @change="handleMockupUpload"
+          :disabled="uploadingMockup"
+          class="file-input"
+        />
+        <span v-if="uploadingMockup" class="uploading">Uploading...</span>
+      </div>
+
+      <div class="section" v-if="mockups.length">
         <h3>Mockup</h3>
         <div class="mockup-layout">
           <div class="mockup-main" v-if="mockups.length">
-            <div class="mockup-container">
+            <div class="mockup-container" ref="mockupContainerRef">
               <img
                 :src="selectedMockup.image_url"
                 class="mockup-image"
@@ -719,6 +912,33 @@ button {
   right: 0;
   bottom: 0;
   cursor: se-resize;
+}
+
+.input-field {
+  width: 100%;
+  padding: 10px;
+  margin: 10px 0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.file-input {
+  display: block;
+  margin: 10px 0;
+  cursor: pointer;
+}
+
+.file-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.uploading {
+  color: #4a90e2;
+  font-weight: 500;
+  margin-left: 10px;
 }
 
 .pa-list {

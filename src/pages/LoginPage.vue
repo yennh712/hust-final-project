@@ -27,7 +27,6 @@ const handleLogin = async (): Promise<void> => {
 
       <button @click="handleLogin">Login</button>
 
-      <p class="forgot">Forgot your password?</p>
     </div>
   </div>
 </template>
@@ -64,12 +63,6 @@ button {
   background: #4a90e2;
   color: white;
   border: none;
-}
-
-.forgot {
-  margin-top: 10px;
-  text-decoration: underline;
-  cursor: pointer;
 }
 
 </style>
